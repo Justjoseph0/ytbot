@@ -12,23 +12,46 @@
  *      NEEDS_AI_GENERATION list, and sends the zip back for download
  *
  * Setup:
- *   - Start the server; users provide their own API keys in the browser
+ *   - Set OPENAI_API_KEY and PEXELS_API_KEY in .env before starting
  *   - npm install
  *   - node server.js
  *   - open http://localhost:3000
  */
 
 const path = require("path");
+require("dotenv").config();
 const express = require("express");
 const archiver = require("archiver");
+const rateLimit = require("express-rate-limit");
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const RESULTS_PER_SHOT = 3;
 const PORT = process.env.PORT || 3000;
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const PREVIEW_RATE_LIMIT = 5;
+const DOWNLOAD_RATE_LIMIT = 5;
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+const rateLimitMessage = "Too many requests — please try again later.";
+const previewRateLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: PREVIEW_RATE_LIMIT,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: rateLimitMessage }),
+});
+const downloadRateLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: DOWNLOAD_RATE_LIMIT,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: rateLimitMessage }),
+});
 
 function slugify(text) {
   return text
@@ -145,22 +168,20 @@ async function findStockForShot(description, pexelsKey) {
 }
 
 // ---- preview endpoint: extract shots and search without downloading ----
-app.post("/api/preview", async (req, res) => {
-  const { script, openaiKey, pexelsKey } = req.body;
-  if (!openaiKey) return res.status(400).json({ error: "Missing OpenAI API key." });
-  if (!pexelsKey) return res.status(400).json({ error: "Missing Pexels API key." });
+app.post("/api/preview", previewRateLimiter, async (req, res) => {
+  const { script } = req.body;
   if (!script || script.trim().length < 20) {
     return res.status(400).json({ error: "Script is too short or missing." });
   }
 
   try {
     console.log("Extracting shot list from script...");
-    const shots = await extractShotsFromScript(script, openaiKey);
+    const shots = await extractShotsFromScript(script, OPENAI_API_KEY);
     console.log(`Got ${shots.length} shots. Fetching stock media...`);
 
     const previewShots = [];
     for (const description of shots) {
-      const results = await findStockForShot(description, pexelsKey);
+      const results = await findStockForShot(description, PEXELS_API_KEY);
       previewShots.push({ description, results, needsAI: results.length === 0 });
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
@@ -173,10 +194,8 @@ app.post("/api/preview", async (req, res) => {
 });
 
 // ---- download endpoint: zip the already-previewed stock results ----
-app.post("/api/download", async (req, res) => {
-  const { shots, openaiKey, pexelsKey } = req.body;
-  if (!openaiKey) return res.status(400).json({ error: "Missing OpenAI API key." });
-  if (!pexelsKey) return res.status(400).json({ error: "Missing Pexels API key." });
+app.post("/api/download", downloadRateLimiter, async (req, res) => {
+  const { shots } = req.body;
   if (!Array.isArray(shots) || shots.length === 0) {
     return res.status(400).json({ error: "No previewed shots supplied." });
   }

@@ -14,10 +14,6 @@
       <p class="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Turn your script into a visual shot list, preview matching Pexels footage, then download the assets when everything looks right.</p>
     </header>
     <section class="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 shadow-2xl shadow-black/20 sm:p-6">
-      <div class="mb-5 grid gap-4 md:grid-cols-2">
-        <div><label for="openaiKey" class="mb-2 block text-sm font-medium text-zinc-200">OpenAI API Key</label><input id="openaiKey" type="password" autocomplete="off" class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20" placeholder="sk-..." /><p class="mt-2 text-xs text-zinc-500">Get your key at <a class="text-red-400 hover:text-red-300" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></p></div>
-        <div><label for="pexelsKey" class="mb-2 block text-sm font-medium text-zinc-200">Pexels API Key</label><input id="pexelsKey" type="password" autocomplete="off" class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20" placeholder="Your Pexels key" /><p class="mt-2 text-xs text-zinc-500">Get a free key at <a class="text-red-400 hover:text-red-300" href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a></p></div>
-      </div>
       <label for="script" class="mb-2 block text-sm font-medium text-zinc-200">Your script</label>
       <textarea id="script" class="min-h-[280px] w-full resize-y rounded-xl border border-zinc-700 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500 focus:ring-2 focus:ring-red-500/20" placeholder="Paste your full script here..."></textarea>
       <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -33,7 +29,7 @@
     </section>
   </main>
 <script>
-  const btn = document.getElementById('generateBtn'), downloadBtn = document.getElementById('downloadBtn'), scriptEl = document.getElementById('script'), openaiKeyEl = document.getElementById('openaiKey'), pexelsKeyEl = document.getElementById('pexelsKey');
+  const btn = document.getElementById('generateBtn'), downloadBtn = document.getElementById('downloadBtn'), scriptEl = document.getElementById('script');
   const status = document.getElementById('status'), loading = document.getElementById('loading'), statusText = document.getElementById('statusText');
   const section = document.getElementById('previewSection'), grid = document.getElementById('previewGrid'), count = document.getElementById('shotCount');
   let previewShots = [], timer;
@@ -52,14 +48,14 @@
     });
   }
   btn.addEventListener('click', async () => {
-    const script = scriptEl.value.trim(), openaiKey = openaiKeyEl.value.trim(), pexelsKey = pexelsKeyEl.value.trim(); if (!openaiKey) return setError('Enter your OpenAI API key first.'); if (!pexelsKey) return setError('Enter your Pexels API key first.'); if (script.length < 20) return setError('Paste a full script first.');
+    const script = scriptEl.value.trim(); if (script.length < 20) return setError('Paste a full script first.');
     btn.disabled = true; downloadBtn.classList.add('hidden'); downloadBtn.classList.remove('inline-flex'); section.classList.add('hidden'); setStatus(''); loading.classList.remove('hidden'); loading.classList.add('flex'); let n = 0; statusText.textContent = messages[0]; timer = setInterval(() => statusText.textContent = messages[++n % messages.length], 3000);
-    try { const res = await fetch('/api/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({script, openaiKey, pexelsKey}) }); const data = await res.json().catch(()=>({})); if (!res.ok) throw new Error(data.error || 'Something went wrong.'); previewShots = data.shots || []; render(previewShots); setStatus('Preview ready. Review the matches, then download when ready.'); }
+    try { const res = await fetch('/api/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({script}) }); const data = await res.json().catch(()=>({})); if (!res.ok) throw new Error(data.error || 'Something went wrong.'); previewShots = data.shots || []; render(previewShots); setStatus('Preview ready. Review the matches, then download when ready.'); }
     catch (e) { setError('Error: ' + e.message); } finally { clearInterval(timer); loading.classList.add('hidden'); loading.classList.remove('flex'); btn.disabled = false; }
   });
   downloadBtn.addEventListener('click', async () => {
     if (!previewShots.length) return; downloadBtn.disabled = true; downloadBtn.textContent = 'Preparing ZIP...'; setStatus('Downloading your footage...');
-    try { const res = await fetch('/api/download', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shots:previewShots, openaiKey:openaiKeyEl.value.trim(), pexelsKey:pexelsKeyEl.value.trim()})}); if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || 'Download failed.'); const url = URL.createObjectURL(await res.blob()), a = document.createElement('a'); a.href=url; a.download='stock-footage.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); setStatus('Done — your download should start automatically.'); }
+    try { const res = await fetch('/api/download', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shots:previewShots})}); if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || 'Download failed.'); const url = URL.createObjectURL(await res.blob()), a = document.createElement('a'); a.href=url; a.download='stock-footage.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); setStatus('Done — your download should start automatically.'); }
     catch(e) { setError('Error: '+e.message); } finally { downloadBtn.disabled=false; downloadBtn.textContent='Download all'; }
   });
 </script>
